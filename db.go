@@ -65,6 +65,30 @@ func Open(dirPath string) (*MiniDB, error) {
 
 // Merge 合并数据文件
 func (db *MiniDB) Merge() error {
+	// 没有数据则忽略
+	if db.dbFile.Offset == 0 {
+		return nil
+	}
+	var (
+		vaildEntries []*Entry
+		offset       int64
+	)
+	// 读取原数据文件中的 Entry
+	for {
+		e, err := db.dbFile.Read(offset)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		// 内存中的索引状态是最新的，直接对比过滤出有效的 Entry
+		if off, ok := db.indexes[string(e.Key)]; ok && off == offset {
+			vaildEntries = append(vaildEntries, e)
+		}
+		offset += e.GetSize()
+	}
+
 	return nil
 }
 
