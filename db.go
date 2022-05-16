@@ -61,7 +61,7 @@ func Open(dirPath string) (*MiniDB, error) {
 	return nil, err
 }
 
-// todo merge put get del
+// todo put get del
 
 // Merge 合并数据文件
 func (db *MiniDB) Merge() error {
@@ -70,7 +70,7 @@ func (db *MiniDB) Merge() error {
 		return nil
 	}
 	var (
-		vaildEntries []*Entry
+		validEntries []*Entry
 		offset       int64
 	)
 	// 读取原数据文件中的 Entry
@@ -84,11 +84,45 @@ func (db *MiniDB) Merge() error {
 		}
 		// 内存中的索引状态是最新的，直接对比过滤出有效的 Entry
 		if off, ok := db.indexes[string(e.Key)]; ok && off == offset {
-			vaildEntries = append(vaildEntries, e)
+			validEntries = append(validEntries, e)
 		}
 		offset += e.GetSize()
 	}
 
+	if len(validEntries) > 0 {
+		mergeDBfile, err := NewMergeDBFile(db.dirPath)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(mergeDBfile.File.Name())
+
+		// 重新写入有效的Entry
+		for _, entry := range validEntries {
+			writeOff := mergeDBfile.Offset
+			err := mergeDBfile.Write(entry)
+			if err != nil {
+				return err
+			}
+
+			// 更新索引
+			db.indexes[string(entry.Key)] = writeOff
+		}
+		// 获取文件名
+		dbFileName := db.dbFile.File.Name()
+		// 关闭文件
+		db.dbFile.File.Close()
+		// 删除旧的数据文件
+		os.Remove(dbFileName)
+
+		// 获取文件名
+		mergeDBFileName := mergeDBfile.File.Name()
+		// 关闭文件
+		mergeDBfile.File.Close()
+		// 临时文件变更为新的数据文件
+		os.Rename(mergeDBFileName, db.dirPath+string(os.PathSeparator)+FileName)
+
+		db.dbFile = mergeDBfile
+	}
 	return nil
 }
 
