@@ -61,8 +61,6 @@ func Open(dirPath string) (*MiniDB, error) {
 	return nil, err
 }
 
-// todo put get del
-
 // Merge 合并数据文件
 func (db *MiniDB) Merge() error {
 	// 没有数据则忽略
