@@ -10,7 +10,7 @@ type MiniDB struct {
 	indexes map[string]int64 // 内存中的索引信息
 	dbFile  *DBFile          // 数据文件
 	dirPath string           // 数据目录
-	mu      sync.Mutex
+	mu      sync.RWMutex
 }
 
 // loadIndexesFromFile 从文件中记载索引
@@ -128,15 +128,68 @@ func (db *MiniDB) Merge() error {
 
 // Put 写入数据
 func (db *MiniDB) Put(key, value []byte) (err error) {
+	if len(key) == 0 {
+		return
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	offset := db.dbFile.Offset
+	// 封装成 Entry
+	entry := NewEntry(key, value, PUT)
+	// 追加到数据文件中
+	err = db.dbFile.Write(entry)
+	db.indexes[string(key)] = offset
 	return
 }
 
 // Get 取出数据
 func (db *MiniDB) Get(key []byte) (val []byte, err error) {
+	if len(key) == 0 {
+		return
+	}
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	// 从内存中获取索引信息
+	offset, ok := db.indexes[string(key)]
+	if !ok {
+		return
+	}
+
+	// 从磁盘中读取读取数据
+	var e *Entry
+	e, err = db.dbFile.Read(offset)
+	if err != nil && err != io.EOF {
+		return
+	}
+	if e != nil {
+		val = e.Value
+	}
 	return
 }
 
 // Del 删除数据
 func (db *MiniDB) Del(key []byte) (err error) {
+	if len(key) == 0 {
+		return
+	}
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	_, ok := db.indexes[string(key)]
+	if !ok {
+		return
+	}
+	e := NewEntry(key, nil, DEL)
+	err = db.dbFile.Write(e)
+	if err != nil {
+		return
+	}
+
+	// 删除内存中的 key
+	delete(db.indexes, string(key))
+
 	return
 }
